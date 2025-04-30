@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오류 발생 - 가상화폐 AI 분석 서비스</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/styles.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #343a40;
+        }
+        
+        .error-container {
+            max-width: 800px;
+            margin: 80px auto;
+            text-align: center;
+            padding: 30px;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .error-icon {
+            font-size: 80px;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+        
+        .error-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #dc3545;
+        }
+        
+        .error-message {
+            font-size: 18px;
+            margin-bottom: 30px;
+            color: #6c757d;
+        }
+        
+        .error-details {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+        
+        .btn-home {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 25px;
+            border-radius: 5px;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .btn-home:hover {
+            background-color: #0069d9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-container">
+            <div class="error-icon">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                ⚠️
+            </div>
+            
+            <h1 class="error-title">오류가 발생했습니다</h1>
+            
+            <p class="error-message" th:text="${message ?: '서비스 이용 중 문제가 발생했습니다.'}">
+                서비스 이용 중 문제가 발생했습니다.
+            </p>
+            
+            <div class="error-details" th:if="${error != null}">
+                <h5>오류 상세 정보:</h5>
+                <pre th:text="${error}">오류 내용이 이곳에 표시됩니다.</pre>
+            </div>
+            
+            <div class="suggestion mb-4">
+                <h5>시도해볼 수 있는 방법:</h5>
+                <ul class="list-unstyled text-start">
+                    <li>1. 페이지 새로고침</li>
+                    <li>2. 브라우저 캐시 삭제 후 다시 시도</li>
+                    <li>3. 나중에 다시 시도</li>
+                    <li>4. 다른 브라우저 사용</li>
+                </ul>
+            </div>
+            
+            <a href="/" class="btn btn-home">홈으로 돌아가기</a>
+        </div>
+    </div>
+    
+    <script>
+        // 오류 로깅 (필요한 경우)
+        console.error('페이지 오류:', document.querySelector('.error-message').textContent);
+        
+        // 5초 후 홈으로 자동 리다이렉트 (선택 사항)
+        // setTimeout(function() {
+        //     window.location.href = '/';
+        // }, 5000);
+    </script>
+</body>
+</html>
