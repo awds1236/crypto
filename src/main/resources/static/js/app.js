@@ -34,20 +34,24 @@ document.addEventListener('DOMContentLoaded', function() {
  * 업비트 API에서 시장 데이터 로드
  */
 function loadMarkets() {
+    console.log("Loading markets...");  // 로깅 추가
     fetch('/markets')
         .then(response => {
+            console.log("Response status:", response.status);  // 응답 상태 로깅
             if (!response.ok) {
                 throw new Error('서버 응답 오류: ' + response.status);
             }
             return response.json();
         })
         .then(data => {
+            console.log("Markets data received:", data.length, "markets");  // 데이터 로깅
             const select = document.getElementById('marketSelect');
             
             // KRW 마켓만 필터링
             const krwMarkets = data.filter(market => market.market.startsWith('KRW-'));
+            console.log("Filtered KRW markets:", krwMarkets.length);  // 필터링 결과 로깅
             
-            // 시가총액 순 정렬 (정확한 정렬을 위해서는 추가 API 호출 필요)
+            // 한국어 이름 기준 정렬
             krwMarkets.sort((a, b) => a.korean_name.localeCompare(b.korean_name));
             
             krwMarkets.forEach(market => {
@@ -61,11 +65,26 @@ function loadMarkets() {
             const btcOption = Array.from(select.options).find(option => option.value === 'KRW-BTC');
             if (btcOption) {
                 btcOption.selected = true;
+            } else if (select.options.length > 1) {
+                select.selectedIndex = 1;  // 첫 번째 실제 코인 선택 (0번은 안내 텍스트)
             }
         })
         .catch(error => {
             console.error('코인 목록 로드 실패:', error);
-            showError('코인 목록을 불러오는 데 실패했습니다. 페이지를 새로고침 해주세요.');
+            // 오류 메시지를 화면에 표시
+            const select = document.getElementById('marketSelect');
+            const option = document.createElement('option');
+            option.value = "";
+            option.textContent = "코인 목록을 불러오지 못했습니다";
+            select.appendChild(option);
+            
+            // 간단한 오류 알림을 화면에 표시
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger';
+            alertDiv.innerHTML = '코인 목록을 불러오는 데 실패했습니다. <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">새로고침</button>';
+            
+            const cardBody = document.querySelector('.card-body');
+            cardBody.insertBefore(alertDiv, cardBody.firstChild);
         });
 }
 
@@ -128,7 +147,7 @@ function analyzeMarket(market) {
         .catch(error => {
             document.getElementById('loading').style.display = 'none';
             console.error('분석 실패:', error);
-            showError('서버 통신 중 오류가 발생했습니다');
+            showError('서버 통신 중 오류가 발생했습니다: ' + error.message);
         });
 }
 
@@ -156,6 +175,11 @@ function formatAnalysisText(analysis) {
 function displayTechnicalIndicators(indicators) {
     const container = document.getElementById('technicalIndicators');
     container.innerHTML = '';
+    
+    if (!indicators) {
+        container.innerHTML = '<div class="alert alert-warning">지표 데이터를 불러올 수 없습니다.</div>';
+        return;
+    }
     
     const table = document.createElement('table');
     table.className = 'table table-sm';
@@ -206,6 +230,11 @@ function formatIndicatorName(key) {
 function displayFearGreedIndex(data) {
     const container = document.getElementById('fearGreedIndex');
     container.innerHTML = '';
+    
+    if (!data) {
+        container.innerHTML = '<div class="alert alert-warning">공포/욕심 지수를 불러올 수 없습니다.</div>';
+        return;
+    }
     
     const value = data.value;
     const classification = data.valueClassification;
@@ -317,6 +346,13 @@ function drawPriceChart(data) {
         priceChart.destroy();
     }
     
+    // 데이터 확인
+    if (!data || !data.sma20 || !data.ema20 || data.sma20.length === 0) {
+        ctx.font = '14px Arial';
+        ctx.fillText('차트 데이터를 불러올 수 없습니다.', 10, 50);
+        return;
+    }
+    
     // 데이터 준비
     const sma20 = data.sma20;
     const ema20 = data.ema20;
@@ -401,6 +437,13 @@ function drawRsiChart(rsiData) {
     // 기존 차트 제거
     if (rsiChart) {
         rsiChart.destroy();
+    }
+    
+    // 데이터 확인
+    if (!rsiData || rsiData.length === 0) {
+        ctx.font = '14px Arial';
+        ctx.fillText('RSI 데이터를 불러올 수 없습니다.', 10, 50);
+        return;
     }
     
     // 차트 생성
@@ -504,30 +547,44 @@ function drawRsiChart(rsiData) {
  * @return {Object} Stomp 클라이언트
  */
 function connectWebSocket(market) {
-    let socket = new SockJS('/ws');
-    let stompClient = Stomp.over(socket);
-    
-    // 로그 출력 비활성화
-    stompClient.debug = null;
-    
-    stompClient.connect({}, function(frame) {
-        console.log('WebSocket 연결 성공');
+    try {
+        let socket = new SockJS('/ws');
+        let stompClient = Stomp.over(socket);
         
-        // 실시간 시세 구독
-        stompClient.subscribe('/topic/ticker', function(message) {
-            const tickerData = JSON.parse(message.body);
-            updateRealTimePrice(tickerData);
+        // 로그 출력 비활성화
+        stompClient.debug = null;
+        
+        stompClient.connect({}, function(frame) {
+            console.log('WebSocket 연결 성공');
+            
+            // 실시간 시세 구독
+            stompClient.subscribe('/topic/ticker', function(message) {
+                try {
+                    const tickerData = JSON.parse(message.body);
+                    updateRealTimePrice(tickerData);
+                } catch (e) {
+                    console.error('실시간 데이터 처리 오류:', e);
+                }
+            });
+            
+            // 서버에 실시간 데이터 요청
+            stompClient.send("/app/subscribe", {}, JSON.stringify({
+                markets: [market]
+            }));
+        }, function(error) {
+            console.error('WebSocket 연결 실패:', error);
+            // 오류 시 3초 후 재연결 시도
+            setTimeout(() => {
+                console.log('WebSocket 재연결 시도...');
+                connectWebSocket(market);
+            }, 3000);
         });
         
-        // 서버에 실시간 데이터 요청
-        stompClient.send("/app/subscribe", {}, JSON.stringify({
-            markets: [market]
-        }));
-    }, function(error) {
-        console.error('WebSocket 연결 실패:', error);
-    });
-    
-    return stompClient;
+        return stompClient;
+    } catch (e) {
+        console.error('WebSocket 연결 중 예외 발생:', e);
+        return null;
+    }
 }
 
 /**
@@ -562,7 +619,13 @@ function updateRealTimePrice(data) {
  * @param {number} changeRate - 변동률
  */
 function updatePageTitle(market, price, changeRate) {
-    const marketName = document.getElementById('marketSelect').options[document.getElementById('marketSelect').selectedIndex].text;
+    const marketSelect = document.getElementById('marketSelect');
+    if (!marketSelect) return;
+    
+    const selectedOption = marketSelect.options[marketSelect.selectedIndex];
+    if (!selectedOption) return;
+    
+    const marketName = selectedOption.text;
     
     if (price) {
         const direction = changeRate > 0 ? '▲' : (changeRate < 0 ? '▼' : '-');
@@ -580,7 +643,13 @@ function updatePageTitle(market, price, changeRate) {
  * @param {number} changeRate - 변동률
  */
 function notifyPriceChange(market, price, changeRate) {
-    const marketName = document.getElementById('marketSelect').options[document.getElementById('marketSelect').selectedIndex].text;
+    const marketSelect = document.getElementById('marketSelect');
+    if (!marketSelect) return;
+    
+    const selectedOption = marketSelect.options[marketSelect.selectedIndex];
+    if (!selectedOption) return;
+    
+    const marketName = selectedOption.text;
     const direction = changeRate > 0 ? '상승' : '하락';
     const changePercent = (Math.abs(changeRate) * 100).toFixed(2);
     
@@ -608,5 +677,18 @@ function requestNotificationPermission() {
  * @param {string} message - 오류 메시지
  */
 function showError(message) {
-    alert(message);
+    // 모달 알림 대신 인라인 알림으로 변경
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-danger mt-3';
+    alertDiv.innerHTML = message + ' <button type="button" class="btn-close float-end" data-bs-dismiss="alert" aria-label="Close"></button>';
+    
+    // 알림 추가
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, document.getElementById('loading'));
+    
+    // 5초 후 자동 제거
+    setTimeout(() => {
+        alertDiv.classList.add('fade');
+        setTimeout(() => alertDiv.remove(), 500);
+    }, 5000);
 }

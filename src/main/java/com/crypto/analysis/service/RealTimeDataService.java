@@ -30,14 +30,15 @@ public class RealTimeDataService {
     }
     
     public void subscribeToTickerData(List<String> markets) {
-        String[] codes = markets.toArray(new String[0]);
-        
         try {
+            String[] codes = markets.toArray(new String[0]);
+            
             client.doHandshake(new TextWebSocketHandler() {
                 @Override
                 public void afterConnectionEstablished(WebSocketSession session) throws Exception {
                     String message = "{\"type\":\"ticker\",\"codes\":" + objectMapper.writeValueAsString(codes) + "}";
                     session.sendMessage(new TextMessage(message));
+                    System.out.println("업비트 WebSocket 연결 성공, 구독 요청 전송: " + message);
                 }
                 
                 @Override
@@ -46,9 +47,32 @@ public class RealTimeDataService {
                     // 받은 데이터를 클라이언트에게 전달
                     messagingTemplate.convertAndSend("/topic/ticker", payload);
                 }
+                
+                @Override
+                public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+                    System.err.println("업비트 WebSocket 전송 오류: " + exception.getMessage());
+                    super.handleTransportError(session, exception);
+                }
+                
+                @Override
+                public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) throws Exception {
+                    System.out.println("업비트 WebSocket 연결 종료: " + status);
+                    // 10초 후 재연결 시도
+                    Thread.sleep(10000);
+                    subscribeToTickerData(markets);
+                }
             }, "wss://api.upbit.com/websocket/v1").get();
         } catch (InterruptedException | ExecutionException e) {
+            System.err.println("업비트 WebSocket 연결 실패: " + e.getMessage());
             e.printStackTrace();
+            
+            // 10초 후 재시도
+            try {
+                Thread.sleep(10000);
+                subscribeToTickerData(markets);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

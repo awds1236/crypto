@@ -1,13 +1,12 @@
 package com.crypto.analysis.service;
 
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.http.ResponseEntity;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,97 +24,135 @@ public class MarketSentimentService {
     
     // 공포/욕심 지수 가져오기 (Alternative.me API 사용)
     public Map<String, Object> getFearAndGreedIndex() throws Exception {
-        String url = "https://api.alternative.me/fng/";
-        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-        JsonNode responseData = objectMapper.readTree(response.getBody());
-        
-        Map<String, Object> sentimentData = new HashMap<>();
-        sentimentData.put("value", responseData.get("data").get(0).get("value").asInt());
-        sentimentData.put("valueClassification", responseData.get("data").get(0).get("value_classification").asText());
-        
-        return sentimentData;
+        try {
+            String url = "https://api.alternative.me/fng/";
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            JsonNode responseData = objectMapper.readTree(response.getBody());
+            
+            Map<String, Object> sentimentData = new HashMap<>();
+            sentimentData.put("value", responseData.get("data").get(0).get("value").asInt());
+            sentimentData.put("valueClassification", responseData.get("data").get(0).get("value_classification").asText());
+            
+            return sentimentData;
+        } catch (Exception e) {
+            System.err.println("공포/욕심 지수 가져오기 실패: " + e.getMessage());
+            
+            // 대체 데이터 반환
+            Map<String, Object> fallbackData = new HashMap<>();
+            fallbackData.put("value", 50);
+            fallbackData.put("valueClassification", "Neutral");
+            
+            return fallbackData;
+        }
     }
     
     // 가상화폐 뉴스 가져오기 (CryptoCompare API 사용)
     public Map<String, Object> getCryptoNews() throws Exception {
-        String url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN";
-        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-        JsonNode newsData = objectMapper.readTree(response.getBody());
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("data", newsData.get("Data"));
-        
-        return result;
+        try {
+            String url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN";
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            JsonNode newsData = objectMapper.readTree(response.getBody());
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", newsData.get("Data"));
+            
+            return result;
+        } catch (Exception e) {
+            System.err.println("뉴스 가져오기 실패: " + e.getMessage());
+            
+            // 빈 뉴스 데이터 반환
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("data", objectMapper.createArrayNode());
+            
+            return emptyResult;
+        }
     }
     
     // 특정 코인에 대한 뉴스 필터링
     public Map<String, Object> getNewsForCoin(String coinSymbol) throws Exception {
-        Map<String, Object> allNews = getCryptoNews();
-        JsonNode newsData = (JsonNode) allNews.get("data");
-        
-        List<JsonNode> filteredNews = new java.util.ArrayList<>();
-        
-        for (JsonNode news : newsData) {
-            String categories = news.get("categories").asText();
-            String title = news.get("title").asText();
-            String body = news.get("body").asText();
+        try {
+            Map<String, Object> allNews = getCryptoNews();
+            JsonNode newsData = (JsonNode) allNews.get("data");
             
-            // 코인 심볼이 카테고리, 제목 또는 본문에 포함되어 있는지 확인
-            if (categories.contains(coinSymbol) || 
-                title.contains(coinSymbol) || 
-                body.contains(coinSymbol)) {
-                filteredNews.add(news);
+            List<JsonNode> filteredNews = new java.util.ArrayList<>();
+            
+            for (JsonNode news : newsData) {
+                String categories = news.get("categories").asText();
+                String title = news.get("title").asText();
+                String body = news.get("body").asText();
+                
+                // 코인 심볼이 카테고리, 제목 또는 본문에 포함되어 있는지 확인
+                if (categories.contains(coinSymbol) || 
+                    title.contains(coinSymbol) || 
+                    body.contains(coinSymbol)) {
+                    filteredNews.add(news);
+                }
             }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("coin", coinSymbol);
+            result.put("newsCount", filteredNews.size());
+            result.put("news", filteredNews);
+            
+            return result;
+        } catch (Exception e) {
+            System.err.println("코인 뉴스 필터링 실패: " + e.getMessage());
+            
+            // 빈 결과 반환
+            Map<String, Object> emptyResult = new HashMap<>();
+            emptyResult.put("coin", coinSymbol);
+            emptyResult.put("newsCount", 0);
+            emptyResult.put("news", new java.util.ArrayList<>());
+            
+            return emptyResult;
         }
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("coin", coinSymbol);
-        result.put("newsCount", filteredNews.size());
-        result.put("news", filteredNews);
-        
-        return result;
     }
     
     // 감성 분석 점수 계산 (간단한 키워드 기반 구현)
     public double calculateSentimentScore(Map<String, Object> news) {
-        List<JsonNode> newsItems = (List<JsonNode>) news.get("news");
-        
-        // 긍정적, 부정적 키워드 정의
-        String[] positiveWords = {"상승", "성장", "호재", "채택", "개선", "기회", 
-                               "bull", "bullish", "surge", "soar", "gain", "rally", "positive"};
-        String[] negativeWords = {"하락", "감소", "악재", "규제", "제한", "위험", 
-                               "bear", "bearish", "crash", "plunge", "drop", "fall", "negative"};
-        
-        double totalScore = 0;
-        
-        for (JsonNode item : newsItems) {
-            String title = item.get("title").asText().toLowerCase();
-            String body = item.get("body").asText().toLowerCase();
-            String fullText = title + " " + body;
+        try {
+            List<JsonNode> newsItems = (List<JsonNode>) news.get("news");
             
-            double itemScore = 0;
+            // 긍정적, 부정적 키워드 정의
+            String[] positiveWords = {"상승", "성장", "호재", "채택", "개선", "기회", 
+                                   "bull", "bullish", "surge", "soar", "gain", "rally", "positive"};
+            String[] negativeWords = {"하락", "감소", "악재", "규제", "제한", "위험", 
+                                   "bear", "bearish", "crash", "plunge", "drop", "fall", "negative"};
             
-            // 긍정 키워드 확인
-            for (String word : positiveWords) {
-                if (fullText.contains(word.toLowerCase())) {
-                    itemScore += 1;
+            double totalScore = 0;
+            
+            for (JsonNode item : newsItems) {
+                String title = item.get("title").asText().toLowerCase();
+                String body = item.get("body").asText().toLowerCase();
+                String fullText = title + " " + body;
+                
+                double itemScore = 0;
+                
+                // 긍정 키워드 확인
+                for (String word : positiveWords) {
+                    if (fullText.contains(word.toLowerCase())) {
+                        itemScore += 1;
+                    }
                 }
+                
+                // 부정 키워드 확인
+                for (String word : negativeWords) {
+                    if (fullText.contains(word.toLowerCase())) {
+                        itemScore -= 1;
+                    }
+                }
+                
+                totalScore += itemScore;
             }
             
-            // 부정 키워드 확인
-            for (String word : negativeWords) {
-                if (fullText.contains(word.toLowerCase())) {
-                    itemScore -= 1;
-                }
+            // 뉴스 항목 수로 정규화 (항목이 없으면 중립 0 반환)
+            if (newsItems.size() > 0) {
+                return totalScore / newsItems.size();
+            } else {
+                return 0;
             }
-            
-            totalScore += itemScore;
-        }
-        
-        // 뉴스 항목 수로 정규화 (항목이 없으면 중립 0 반환)
-        if (newsItems.size() > 0) {
-            return totalScore / newsItems.size();
-        } else {
+        } catch (Exception e) {
+            System.err.println("감성 분석 점수 계산 실패: " + e.getMessage());
             return 0;
         }
     }

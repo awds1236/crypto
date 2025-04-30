@@ -1,15 +1,21 @@
 package com.crypto.analysis.controller;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 
-import com.crypto.analysis.service.*;
+import com.crypto.analysis.service.ClaudeService;
+import com.crypto.analysis.service.MarketSentimentService;
+import com.crypto.analysis.service.TechnicalIndicatorService;
+import com.crypto.analysis.service.UpbitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Controller
 public class CryptoAnalysisController {
@@ -41,7 +47,13 @@ public class CryptoAnalysisController {
     @GetMapping("/markets")
     @ResponseBody
     public String getMarkets() {
-        return upbitService.getMarkets();
+        try {
+            return upbitService.getMarkets();
+        } catch (Exception e) {
+            // Log the error instead of printing the stack trace
+            System.err.println("Error fetching coin list: " + e.getMessage());
+            return "[]";
+        }
     }
     
     @GetMapping("/analyze")
@@ -117,11 +129,9 @@ public class CryptoAnalysisController {
     }
     
     @ExceptionHandler(Exception.class)
-    @ResponseBody
-    public Map<String, Object> handleError(Exception e) {
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("success", false);
-        errorResponse.put("error", e.getMessage());
-        return errorResponse;
+    public String handleError(Exception e, Model model) {
+        model.addAttribute("message", "서비스 처리 중 오류가 발생했습니다.");
+        model.addAttribute("error", e.getMessage());
+        return "error";
     }
 }
