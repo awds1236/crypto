@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,20 @@ public class TechnicalIndicatorService {
             JsonNode candles = objectMapper.readTree(candleData);
             BarSeries series = new BaseBarSeries();
             
-            for (JsonNode candle : candles) {
+            // 날짜 기준으로 정렬 (과거 → 최신)
+            List<JsonNode> candleList = new ArrayList<>();
+            candles.forEach(candleList::add);
+            
+            // 날짜 기준 오름차순 정렬
+            candleList.sort(Comparator.comparing(a -> 
+                ZonedDateTime.ofInstant(
+                    Instant.parse(a.get("candle_date_time_utc").asText() + "Z"),
+                    ZoneId.systemDefault()
+                )
+            ));
+            
+            // 정렬된 데이터로 시리즈 생성
+            for (JsonNode candle : candleList) {
                 ZonedDateTime dateTime = ZonedDateTime.ofInstant(
                     Instant.parse(candle.get("candle_date_time_utc").asText() + "Z"),
                     ZoneId.systemDefault()
@@ -144,6 +158,18 @@ public class TechnicalIndicatorService {
             indicators.put("ema20", calculateEMA(series, 20));
             indicators.put("rsi14", calculateRSI(series, 14));
             
+            // 날짜 정보 추출 추가
+            List<String> dateLabels = new ArrayList<>();
+            for (int i = 0; i < series.getBarCount(); i++) {
+                ZonedDateTime dateTime = series.getBar(i).getEndTime();
+                // MM/dd 형식으로 날짜 표시 (월/일)
+                String dateLabel = String.format("%02d/%02d", 
+                    dateTime.getMonthValue(), 
+                    dateTime.getDayOfMonth());
+                dateLabels.add(dateLabel);
+            }
+            indicators.put("dates", dateLabels);
+            
             // 최신 지표 값만 추출
             Map<String, Double> latestValues = new HashMap<>();
             List<Double> sma20List = (List<Double>) indicators.get("sma20");
@@ -167,10 +193,22 @@ public class TechnicalIndicatorService {
             List<Double> defaultEma = createDefaultIndicatorValues(defaultSize);
             List<Double> defaultRsi = createDefaultRsiValues(defaultSize);
             
+            // 기본 날짜 정보 생성 (현재 날짜로부터 30일)
+            List<String> defaultDates = new ArrayList<>();
+            ZonedDateTime now = ZonedDateTime.now();
+            for (int i = defaultSize - 1; i >= 0; i--) {
+                ZonedDateTime date = now.minusDays(i);
+                String dateLabel = String.format("%02d/%02d", 
+                    date.getMonthValue(), 
+                    date.getDayOfMonth());
+                defaultDates.add(dateLabel);
+            }
+            
             defaultIndicators.put("market", market);
             defaultIndicators.put("sma20", defaultSma);
             defaultIndicators.put("ema20", defaultEma);
             defaultIndicators.put("rsi14", defaultRsi);
+            defaultIndicators.put("dates", defaultDates);
             
             Map<String, Double> latestValues = new HashMap<>();
             latestValues.put("sma20", defaultSma.get(defaultSize - 1));
@@ -180,5 +218,17 @@ public class TechnicalIndicatorService {
             defaultIndicators.put("latest", latestValues);
             return defaultIndicators;
         }
+    }
+
+    // TechnicalIndicatorService.java에 추가할 메서드
+    /**
+     * 주식 기술적 지표 계산 (StockIndicatorService로 위임)
+     */
+    public Map<String, Object> calculateStockIndicators(String symbol, String candleData) throws Exception {
+        // StockIndicatorService 인스턴스 생성 또는 주입
+        StockIndicatorService stockIndicatorService = new StockIndicatorService();
+        
+        // StockIndicatorService의 메서드 호출하여 결과 반환
+        return stockIndicatorService.calculateStockIndicators(symbol, candleData);
     }
 }

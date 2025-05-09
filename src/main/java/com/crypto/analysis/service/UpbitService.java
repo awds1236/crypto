@@ -11,8 +11,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -21,10 +23,10 @@ public class UpbitService {
     private final RestTemplate restTemplate;
     private final String API_URL = "https://api.upbit.com/v1";
     
-    @Value("${upbit.api.access-key}")
+    @Value("${upbit.api.access-key:}")
     private String ACCESS_KEY;
     
-    @Value("${upbit.api.secret-key}")
+    @Value("${upbit.api.secret-key:}")
     private String SECRET_KEY;
     
     public UpbitService(RestTemplate restTemplate) {
@@ -36,13 +38,39 @@ public class UpbitService {
         try {
             String url = API_URL + "/market/all";
             System.out.println("Requesting URL: " + url);  // 로깅 추가
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            
+            // HTTP 헤더 설정
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+            headers.set("User-Agent", "Crypto-Analysis-Application");
+            
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            
+            ResponseEntity<String> response = restTemplate.exchange(
+                url, 
+                HttpMethod.GET, 
+                entity,
+                String.class
+            );
+            
             System.out.println("Response status: " + response.getStatusCode());  // 응답 상태 로깅
+            System.out.println("Response body length: " + (response.getBody() != null ? response.getBody().length() : 0));  // 응답 길이 로깅
+            
+            // 응답 내용 확인
+            if (response.getBody() == null || response.getBody().trim().isEmpty()) {
+                System.err.println("Empty response from Upbit API");
+                return getFallbackMarkets();
+            }
+            
             return response.getBody();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             System.err.println("업비트 API 연결 실패, 임시 데이터를 사용합니다: " + e.getMessage());
             e.printStackTrace();
             return getFallbackMarkets();  // 실패 시 임시 데이터 반환
+        } catch (Exception e) {
+            System.err.println("Unknown error: " + e.getMessage());
+            e.printStackTrace();
+            return getFallbackMarkets();
         }
     }
     
@@ -76,7 +104,21 @@ public class UpbitService {
     public String getCurrentPrice(String market) {
         try {
             String url = API_URL + "/ticker?markets=" + market;
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            
+            // HTTP 헤더 설정
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+            headers.set("User-Agent", "Crypto-Analysis-Application");
+            
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            
+            ResponseEntity<String> response = restTemplate.exchange(
+                url, 
+                HttpMethod.GET, 
+                entity,
+                String.class
+            );
+            
             return response.getBody();
         } catch (Exception e) {
             System.err.println("현재가 조회 실패: " + e.getMessage());
@@ -89,7 +131,21 @@ public class UpbitService {
     public String getCandles(String market, String interval, int count) {
         try {
             String url = API_URL + "/candles/" + interval + "?market=" + market + "&count=" + count;
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            
+            // HTTP 헤더 설정
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+            headers.set("User-Agent", "Crypto-Analysis-Application");
+            
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            
+            ResponseEntity<String> response = restTemplate.exchange(
+                url, 
+                HttpMethod.GET, 
+                entity,
+                String.class
+            );
+            
             return response.getBody();
         } catch (Exception e) {
             System.err.println("캔들 데이터 조회 실패: " + e.getMessage());

@@ -1,6 +1,6 @@
 /**
  * 가상화폐 AI 분석 서비스 JavaScript
- * 업비트 API 데이터와 Claude AI를 이용한 가상화폐 분석 시스템
+ * 업비트, 바이낸스 API 데이터와 Claude AI를 이용한 가상화폐 분석 시스템
  */
 
 // 전역 변수
@@ -8,19 +8,26 @@ let priceChart = null;
 let rsiChart = null;
 let stompClient = null;
 let currentMarket = null;
+let currentExchange = "upbit"; // 기본 거래소 설정
 let realTimePrices = {};
 
 // DOM이 로드되면 초기화
 document.addEventListener('DOMContentLoaded', function() {
-    // 코인 목록 로드
-    loadMarkets();
+    // 초기 거래소에 따른 코인 목록 로드
+    loadMarkets(currentExchange);
+    
+    // 거래소 변경 이벤트
+    document.getElementById('exchangeSelect').addEventListener('change', function() {
+        currentExchange = this.value;
+        loadMarkets(currentExchange);
+    });
     
     // 분석 버튼 이벤트
     document.getElementById('analyzeBtn').addEventListener('click', function() {
         const market = document.getElementById('marketSelect').value;
         if (market) {
             currentMarket = market;
-            analyzeMarket(market);
+            analyzeMarket(market, currentExchange);
             
             // 알림 권한 요청 (선택 사항)
             requestNotificationPermission();
@@ -31,57 +38,152 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
- * 업비트 API에서 시장 데이터 로드
+ * 선택한 거래소에 따른 코인 목록 로드
+ * @param {string} exchange - 거래소 코드 (upbit 또는 binance)
  */
-function loadMarkets() {
-    console.log("Loading markets...");  // 로깅 추가
-    fetch('/markets')
+function loadMarkets(exchange) {
+    console.log(`Loading markets from ${exchange}...`);
+    
+    // 로딩 중 표시 추가
+    const select = document.getElementById('marketSelect');
+    select.innerHTML = '<option value="">코인 목록 로딩 중...</option>';
+    select.disabled = true;
+    
+    fetch(`/markets?exchange=${exchange}`)
         .then(response => {
-            console.log("Response status:", response.status);  // 응답 상태 로깅
+            console.log("Response status:", response.status);
+            
             if (!response.ok) {
                 throw new Error('서버 응답 오류: ' + response.status);
             }
+            
             return response.json();
         })
         .then(data => {
-            console.log("Markets data received:", data.length, "markets");  // 데이터 로깅
-            const select = document.getElementById('marketSelect');
+            console.log(`${exchange} markets data received:`, data.length, "markets");
             
-            // KRW 마켓만 필터링
-            const krwMarkets = data.filter(market => market.market.startsWith('KRW-'));
-            console.log("Filtered KRW markets:", krwMarkets.length);  // 필터링 결과 로깅
+            select.disabled = false;
+            select.innerHTML = ''; // 로딩 메시지 제거
             
-            // 한국어 이름 기준 정렬
-            krwMarkets.sort((a, b) => a.korean_name.localeCompare(b.korean_name));
+            // 안내 옵션 추가
+            const defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.textContent = "코인을 선택하세요";
+            select.appendChild(defaultOption);
             
-            krwMarkets.forEach(market => {
-                const option = document.createElement('option');
-                option.value = market.market;
-                option.textContent = `${market.korean_name} (${market.market})`;
-                select.appendChild(option);
-            });
+            // 거래소별 필터링 및 정렬
+            let filteredMarkets = [];
             
-            // BTC 자동 선택 (선택 사항)
-            const btcOption = Array.from(select.options).find(option => option.value === 'KRW-BTC');
-            if (btcOption) {
-                btcOption.selected = true;
-            } else if (select.options.length > 1) {
-                select.selectedIndex = 1;  // 첫 번째 실제 코인 선택 (0번은 안내 텍스트)
+            if (exchange === "upbit") {
+                // 업비트: KRW 마켓만 필터링
+                filteredMarkets = data.filter(market => market.market && market.market.startsWith('KRW-'));
+                
+                // 한국어 이름 기준 정렬
+                filteredMarkets.sort((a, b) => {
+                    const aName = a.korean_name || a.market;
+                    const bName = b.korean_name || b.market;
+                    return aName.localeCompare(bName);
+                });
+                
+                // 옵션 생성
+                filteredMarkets.forEach(market => {
+                    const option = document.createElement('option');
+                    option.value = market.market;
+                    
+                    const koreanName = market.korean_name || '이름 없음';
+                    option.textContent = `${koreanName} (${market.market})`;
+                    
+                    select.appendChild(option);
+                });
+            } else if (exchange === "binance") {
+                // 바이낸스: USDT 마켓 (이미 필터링됨)
+                filteredMarkets = data;
+                
+                // 영어 심볼 기준 정렬
+                filteredMarkets.sort((a, b) => {
+                    const aSymbol = a.baseAsset || "";
+                    const bSymbol = b.baseAsset || "";
+                    return aSymbol.localeCompare(bSymbol);
+                });
+                
+                // 옵션 생성
+                filteredMarkets.forEach(market => {
+                    const option = document.createElement('option');
+                    option.value = market.market;
+                    
+                    const koreanName = market.korean_name || market.baseAsset;
+                    option.textContent = `${koreanName} (${market.market})`;
+                    
+                    select.appendChild(option);
+                });
+            }
+            
+            console.log(`Filtered ${exchange} markets:`, filteredMarkets.length);
+            
+            // 주요 코인 자동 선택 (거래소별)
+            if (exchange === "upbit") {
+                const btcOption = Array.from(select.options).find(option => option.value === 'KRW-BTC');
+                if (btcOption) {
+                    btcOption.selected = true;
+                }
+            } else if (exchange === "binance") {
+                const btcOption = Array.from(select.options).find(option => option.value === 'BTCUSDT');
+                if (btcOption) {
+                    btcOption.selected = true;
+                }
+            }
+            
+            // 선택된 옵션이 없으면 첫 번째 실제 코인 선택
+            if (select.selectedIndex === 0 && select.options.length > 1) {
+                select.selectedIndex = 1;
             }
         })
         .catch(error => {
-            console.error('코인 목록 로드 실패:', error);
-            // 오류 메시지를 화면에 표시
-            const select = document.getElementById('marketSelect');
-            const option = document.createElement('option');
-            option.value = "";
-            option.textContent = "코인 목록을 불러오지 못했습니다";
-            select.appendChild(option);
+            console.error(`${exchange} 코인 목록 로드 실패:`, error);
+            
+            // 로딩 상태 해제
+            select.disabled = false;
+            select.innerHTML = ''; // 기존 옵션 제거
+            
+            // 안내 옵션 추가
+            const errorOption = document.createElement('option');
+            errorOption.value = "";
+            errorOption.textContent = "코인 목록을 불러오지 못했습니다";
+            select.appendChild(errorOption);
+            
+            // 기본 코인 목록 추가 (API 실패 시에도 사용 가능하도록)
+            const defaultCoins = exchange === "upbit" ? 
+                [
+                    {value: "KRW-BTC", text: "비트코인 (KRW-BTC)"},
+                    {value: "KRW-ETH", text: "이더리움 (KRW-ETH)"},
+                    {value: "KRW-XRP", text: "리플 (KRW-XRP)"},
+                    {value: "KRW-SOL", text: "솔라나 (KRW-SOL)"},
+                    {value: "KRW-ADA", text: "에이다 (KRW-ADA)"}
+                ] : 
+                [
+                    {value: "BTCUSDT", text: "비트코인 (BTCUSDT)"},
+                    {value: "ETHUSDT", text: "이더리움 (ETHUSDT)"},
+                    {value: "XRPUSDT", text: "리플 (XRPUSDT)"},
+                    {value: "SOLUSDT", text: "솔라나 (SOLUSDT)"},
+                    {value: "ADAUSDT", text: "에이다 (ADAUSDT)"}
+                ];
+            
+            defaultCoins.forEach(coin => {
+                const option = document.createElement('option');
+                option.value = coin.value;
+                option.textContent = coin.text;
+                select.appendChild(option);
+            });
+            
+            // 첫 번째 코인 선택
+            if (select.options.length > 1) {
+                select.selectedIndex = 1;
+            }
             
             // 간단한 오류 알림을 화면에 표시
             const alertDiv = document.createElement('div');
             alertDiv.className = 'alert alert-danger';
-            alertDiv.innerHTML = '코인 목록을 불러오는 데 실패했습니다. <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">새로고침</button>';
+            alertDiv.innerHTML = `${exchange} 코인 목록을 불러오는 데 실패했습니다. 기본 목록을 사용합니다. <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">새로고침</button>`;
             
             const cardBody = document.querySelector('.card-body');
             cardBody.insertBefore(alertDiv, cardBody.firstChild);
@@ -89,10 +191,11 @@ function loadMarkets() {
 }
 
 /**
- * 선택한 마켓에 대한 분석 실행
- * @param {string} market - 마켓 코드 (예: KRW-BTC)
+ * 선택한 코인 분석 실행
+ * @param {string} market - 마켓 코드 (예: KRW-BTC, BTCUSDT)
+ * @param {string} exchange - 거래소 코드 (upbit 또는 binance)
  */
-function analyzeMarket(market) {
+function analyzeMarket(market, exchange) {
     // 로딩 표시
     document.getElementById('loading').style.display = 'block';
     document.getElementById('analysisResult').style.display = 'none';
@@ -102,7 +205,7 @@ function analyzeMarket(market) {
         stompClient.disconnect();
     }
     
-    fetch(`/analyze?market=${market}`)
+    fetch(`/analyze?market=${market}&exchange=${exchange}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error('서버 응답 오류: ' + response.status);
@@ -135,11 +238,11 @@ function analyzeMarket(market) {
                 drawPriceChart(data.indicators);
                 drawRsiChart(data.indicators.rsi14);
                 
-                // 실시간 데이터 연결
-                stompClient = connectWebSocket(market);
+                // 실시간 데이터 연결 (웹소켓 구현 필요)
+                // stompClient = connectWebSocket(market, exchange);
                 
                 // 타이틀 업데이트
-                updatePageTitle(market);
+                updatePageTitle(market, exchange);
             } else {
                 showError('분석 중 오류가 발생했습니다: ' + data.error);
             }
@@ -353,6 +456,9 @@ function drawPriceChart(data) {
         return;
     }
     
+    // 날짜 레이블 준비
+    const labels = data.dates || Array.from({length: data.sma20.length}, (_, i) => i + 1);
+    
     // 데이터 준비
     const sma20 = data.sma20;
     const ema20 = data.ema20;
@@ -361,7 +467,7 @@ function drawPriceChart(data) {
     priceChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: Array.from({length: sma20.length}, (_, i) => i + 1),
+            labels: labels,
             datasets: [
                 {
                     label: 'SMA (20)',
@@ -396,7 +502,7 @@ function drawPriceChart(data) {
                     display: true,
                     title: {
                         display: true,
-                        text: '가격'
+                        text: currentExchange === 'upbit' ? '가격 (KRW)' : '가격 (USDT)'
                     }
                 }
             },
@@ -495,7 +601,7 @@ function drawRsiChart(rsiData) {
         }
     });
     
-    // 추가 확장: RSI 70, 30 라인 (Chart.js 플러그인 필요)
+    // 추가 확장: RSI 70, 30 라인
     if (Chart.annotationLinesDrawn) {
         return;
     }
@@ -544,9 +650,10 @@ function drawRsiChart(rsiData) {
 /**
  * WebSocket 연결 - 실시간 데이터 수신
  * @param {string} market - 마켓 코드
+ * @param {string} exchange - 거래소 코드
  * @return {Object} Stomp 클라이언트
  */
-function connectWebSocket(market) {
+function connectWebSocket(market, exchange) {
     try {
         let socket = new SockJS('/ws');
         let stompClient = Stomp.over(socket);
@@ -561,7 +668,7 @@ function connectWebSocket(market) {
             stompClient.subscribe('/topic/ticker', function(message) {
                 try {
                     const tickerData = JSON.parse(message.body);
-                    updateRealTimePrice(tickerData);
+                    updateRealTimePrice(tickerData, exchange);
                 } catch (e) {
                     console.error('실시간 데이터 처리 오류:', e);
                 }
@@ -569,14 +676,15 @@ function connectWebSocket(market) {
             
             // 서버에 실시간 데이터 요청
             stompClient.send("/app/subscribe", {}, JSON.stringify({
-                markets: [market]
+                markets: [market],
+                exchange: exchange
             }));
         }, function(error) {
             console.error('WebSocket 연결 실패:', error);
             // 오류 시 3초 후 재연결 시도
             setTimeout(() => {
                 console.log('WebSocket 재연결 시도...');
-                connectWebSocket(market);
+                connectWebSocket(market, exchange);
             }, 3000);
         });
         
@@ -590,8 +698,9 @@ function connectWebSocket(market) {
 /**
  * 실시간 가격 업데이트
  * @param {Object} data - 시세 데이터
+ * @param {string} exchange - 거래소 코드
  */
-function updateRealTimePrice(data) {
+function updateRealTimePrice(data, exchange) {
     if (!data || !data.code) return;
     
     const market = data.code;
@@ -603,22 +712,55 @@ function updateRealTimePrice(data) {
         realTimePrices[market] = data.trade_price;
         
         // 페이지 타이틀 업데이트
-        updatePageTitle(market, data.trade_price, data.change_rate);
+        updatePageTitle(market, exchange, data.trade_price, data.change_rate);
         
         // 가격 변동 시 알림 (옵션)
         if (oldPrice && Math.abs(data.change_rate) > 0.01) {
-            notifyPriceChange(market, data.trade_price, data.change_rate);
+            notifyPriceChange(market, exchange, data.trade_price, data.change_rate);
         }
+        
+        // 실시간 가격 표시 영역이 없으면 추가
+        if (!document.getElementById('realTimePrice')) {
+            const priceDiv = document.createElement('div');
+            priceDiv.id = 'realTimePrice';
+            priceDiv.className = 'card mt-3';
+            priceDiv.innerHTML = `
+                <div class="card-header">실시간 가격 정보</div>
+                <div class="card-body">
+                    <h3 id="currentPrice">가격: 로딩 중...</h3>
+                    <p id="priceChange">변동: 로딩 중...</p>
+                </div>
+            `;
+            
+            // 분석 결과 영역 앞에 추가
+            const resultsDiv = document.getElementById('analysisResult');
+            resultsDiv.insertBefore(priceDiv, resultsDiv.firstChild);
+        }
+        
+        // 가격 표시 업데이트
+        const currencySymbol = exchange === 'upbit' ? 'KRW' : 'USDT';
+        document.getElementById('currentPrice').textContent = 
+            `가격: ${data.trade_price.toLocaleString()} ${currencySymbol}`;
+            
+        const changePercent = (data.change_rate * 100).toFixed(2);
+        const changeDirection = data.change_rate > 0 ? '▲' : (data.change_rate < 0 ? '▼' : '-');
+        
+        document.getElementById('priceChange').textContent = 
+            `변동: ${changeDirection} ${changePercent}%`;
+        document.getElementById('priceChange').className = 
+            data.change_rate > 0 ? 'text-success' : 
+            (data.change_rate < 0 ? 'text-danger' : '');
     }
 }
 
 /**
  * 페이지 타이틀 업데이트
  * @param {string} market - 마켓 코드
+ * @param {string} exchange - 거래소 코드
  * @param {number} price - 현재 가격
  * @param {number} changeRate - 변동률
  */
-function updatePageTitle(market, price, changeRate) {
+function updatePageTitle(market, exchange, price, changeRate) {
     const marketSelect = document.getElementById('marketSelect');
     if (!marketSelect) return;
     
@@ -626,11 +768,12 @@ function updatePageTitle(market, price, changeRate) {
     if (!selectedOption) return;
     
     const marketName = selectedOption.text;
+    const currencySymbol = exchange === 'upbit' ? 'KRW' : 'USDT';
     
     if (price) {
         const direction = changeRate > 0 ? '▲' : (changeRate < 0 ? '▼' : '-');
         const changePercent = Math.abs(changeRate * 100).toFixed(2);
-        document.title = `${price.toLocaleString()} ${direction} ${changePercent}% | ${marketName}`;
+        document.title = `${price.toLocaleString()} ${currencySymbol} ${direction} ${changePercent}% | ${marketName}`;
     } else {
         document.title = `${marketName} - 가상화폐 AI 분석`;
     }
@@ -639,10 +782,11 @@ function updatePageTitle(market, price, changeRate) {
 /**
  * 가격 변동 알림
  * @param {string} market - 마켓 코드
+ * @param {string} exchange - 거래소 코드
  * @param {number} price - 현재 가격
  * @param {number} changeRate - 변동률
  */
-function notifyPriceChange(market, price, changeRate) {
+function notifyPriceChange(market, exchange, price, changeRate) {
     const marketSelect = document.getElementById('marketSelect');
     if (!marketSelect) return;
     
@@ -652,10 +796,11 @@ function notifyPriceChange(market, price, changeRate) {
     const marketName = selectedOption.text;
     const direction = changeRate > 0 ? '상승' : '하락';
     const changePercent = (Math.abs(changeRate) * 100).toFixed(2);
+    const currencySymbol = exchange === 'upbit' ? 'KRW' : 'USDT';
     
     if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(`${marketName} ${direction} 알림`, {
-            body: `${changePercent}% ${direction}했습니다. 현재가: ${price.toLocaleString()}`,
+            body: `${changePercent}% ${direction}했습니다. 현재가: ${price.toLocaleString()} ${currencySymbol}`,
             icon: '/favicon.ico'
         });
     }
