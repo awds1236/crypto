@@ -47,6 +47,7 @@ h1, h2, h3, h4, h5, h6 {
     border-bottom: none;
 }
 
+/* 카드 본문 스타일도 일관성 있게 수정 */
 .card-body {
     padding: 20px;
 }
